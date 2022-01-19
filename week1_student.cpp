@@ -10,15 +10,13 @@
 #include <sys/stat.h>
 #include <curses.h>
 
-//gcc -o week1 week_1.cpp -lwiringPi -lncurses -lm
-
 #define frequency 25000000.0
 #define CONFIG           0x1A
 #define SMPLRT_DIV       0x19
 #define GYRO_CONFIG      0x1B
 #define ACCEL_CONFIG     0x1C
 #define ACCEL_CONFIG2    0x1D
-#define USER_CTRL        0x6A  // Bit 7 enable DMP, bit 3 reset DMP
+#define USER_CTRL        0x6A // Bit 7 enable DMP, bit 3 reset DMP
 #define PWR_MGMT_1       0x6B // Device defaults to the SLEEP mode
 #define PWR_MGMT_2       0x6C
 
@@ -79,10 +77,8 @@ void calibrate_imu()
   float x_gyro = 0, y_gyro = 0, z_gyro = 0;
   for (int i = 0; i < 1000; i++){
     read_imu();
-    roll_tot = roll_tot + imu_data[7];
-    pitch_tot = pitch_tot + imu_data[6];
-    // x_accel = x_accel + imu_data[3];
-    // y_accel = y_accel + imu_data[4];
+    roll_tot = roll_tot + roll_angle;
+    pitch_tot = pitch_tot + pitch_angle;
     z_accel = z_accel + imu_data[5];
     x_gyro = x_gyro + imu_data[0];
     y_gyro = y_gyro + imu_data[1];
@@ -97,8 +93,6 @@ void calibrate_imu()
   accel_z_calibration= z_accel/-1000.0;
   
 printf("calibration complete\nx_gyro: %f\ny_gyro: %f\nz_gyro: %f\nroll: %f\npitch: %f\nz_accel: %f\n\r",x_gyro_calibration,y_gyro_calibration,z_gyro_calibration,roll_calibration,pitch_calibration,accel_z_calibration);
-
-
 }
 
 void read_imu()
@@ -179,22 +173,14 @@ void read_imu()
   }          
   imu_data[2]=z_gyro_calibration+((float)vw/32767.0)*500;////todo: convert vw from raw values to degrees/second
   
-  // pitch_angle = pitch_calibration + atan2(-imu_data[4],-imu_data[5]-accel_z_calibration)*180/3.14; //pitch
-  // roll_angle = roll_calibration + atan2(imu_data[3],-imu_data[5]-accel_z_calibration)*180/3.14; //roll
+  pitch_angle = pitch_calibration + atan2(-imu_data[4],-imu_data[5]+accel_z_calibration)*(180/3.14159); //pitch
+  roll_angle = roll_calibration + atan2(imu_data[3],-imu_data[5]+accel_z_calibration)*(180/3.14159); //roll
 
-  pitch_angle = atan2(-imu_data[4],-imu_data[5]-accel_z_calibration)*180/3.14; //pitch
-  roll_angle = atan2(imu_data[3],-imu_data[5]-accel_z_calibration)*180/3.14; //roll
-
-  printf("Gyro   X:%6.2f   Y:%6.2f   Z:%6.2f\n", imu_data[0], imu_data[1], imu_data[2]);
-  printf("Accel  X:%6.2f   Y:%6.2f   Z:%6.2f\n", imu_data[3], imu_data[4], imu_data[5]);
-  printf("Roll:%6.2f   Pitch:%6.2f  \n\n", roll_angle, pitch_angle);
-
-
+  printf("Gyro  X:%5.2f   Y:%5.2f   Z:%5.2f     Accel  X:%5.2f   Y:%5.2f   Z:%5.2f     Roll:%5.2f     Pitch:%5.2f  \n", imu_data[0], imu_data[1], imu_data[2], imu_data[3], imu_data[4], imu_data[5], roll_angle, pitch_angle);
 }
 
 void update_filter()
 {
-
   //get current time in nanoseconds
   timespec_get(&te,TIME_UTC);
   time_curr=te.tv_nsec;
@@ -213,11 +199,9 @@ void update_filter()
   //comp. filter for roll, pitch here: 
 }
 
-
 int setup_imu()
 {
   wiringPiSetup ();
-  
   
   //setup imu on I2C
   imu=wiringPiI2CSetup (0x68) ; //accel/gyro address
@@ -235,7 +219,6 @@ int setup_imu()
     
     uint8_t Ascale = AFS_2G;     // AFS_2G, AFS_4G, AFS_8G, AFS_16G
     uint8_t Gscale = GFS_500DPS; // GFS_250DPS, GFS_500DPS, GFS_1000DPS, GFS_2000DPS
-    
     
     //init imu
     wiringPiI2CWriteReg8(imu,PWR_MGMT_1, 0x00);
