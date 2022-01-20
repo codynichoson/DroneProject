@@ -20,7 +20,7 @@
 #define PWR_MGMT_1       0x6B // Device defaults to the SLEEP mode
 #define PWR_MGMT_2       0x6C
 
-#define HB_LIM 100
+#define HB_LIM 100 // heartbeat counter threshold
 
 enum Ascale {
   AFS_2G = 0,
@@ -53,7 +53,7 @@ float z_gyro_calibration=0;
 float roll_calibration=0;
 float pitch_calibration=0;
 float accel_z_calibration=0;
-float imu_data[6]; //gyro xyz, accel xyz,  pitch roll
+float imu_data[6]; //gyro xyz, accel xyz
 long time_curr;
 long time_prev;
 struct timespec te;
@@ -65,7 +65,6 @@ float pitch = 0;// self add
 float roll_gyro = 0;// self add
 float pitch_gyro = 0;// self add
 int prev_hb = 0;
-
 
 
 struct Keyboard {
@@ -81,7 +80,6 @@ int run_program=1;
  
 int main (int argc, char *argv[])
 {
-    
 
     setup_imu();
     calibrate_imu();
@@ -103,28 +101,28 @@ void safety_check(){
   Keyboard keyboard=*shared_memory;
 
   int current_hb = keyboard.heartbeat;
-  printf("Previous heartbeat: %d\n", prev_hb);
-  printf("Current heartbeat: %d\n", current_hb);
+  // printf("Previous heartbeat: %d\n", prev_hb);
+  // printf("Current heartbeat: %d\n", current_hb);
 
   // printf("\nkeypress is = %c",keyboard.key_press,keyboard.key_press,keyboard.key_press);
   // printf("\nhearbeat %d" ,keyboard.heartbeat);
   // printf("\nhearbeat track %d" ,hb_track);
 
   if (roll>45 || roll<-45){
-    printf("ending program\n\r");
+    printf("\nRoll is TOO XTREME!:ending program\n\r");
     run_program=0;
   }
   if (pitch>45 || pitch<-45){
-    printf("ending program\n\r");
+    printf("\nPitch is TOO XTREME!: ending program\n\r");
     run_program=0;
   }
   if (imu_data[0]>300 || imu_data[1]>300 || imu_data[2]>300){
-    printf("ending program\n\r");
+    printf("\n Gyro detected XTREME rotation!: ending program\n\r");
     run_program=0;
   }
 
   if (keyboard.key_press == 32){
-    printf("ending program\n\r");
+    printf("\nYou pressed spacebar: ending program\n\r");
     run_program=0;
   }
 
@@ -133,15 +131,14 @@ void safety_check(){
     printf("\nhb_count is %d \n",hb_count);
     if(hb_count > HB_LIM){
    
-      printf("ending program heartbeat killed\n\n");
+      printf("\nHeartbeat not detected!: ending program\n\r");
       run_program=0;
     }
 
   }else{
     hb_count = 0;
-    printf("heartbeat is fine\n\n");
+    printf("\nheartbeat is fine\n");
   }
-
   prev_hb = current_hb;
 
 }
@@ -173,7 +170,7 @@ void setup_keyboard()
 void trap(int signal)
 {
  
-   printf("ending program in trap\n\r");
+   printf("Killing motors!: ending program in trap\n\r");
 
    run_program=0;
 }
@@ -201,7 +198,7 @@ void calibrate_imu()
   pitch_calibration= pitch_tot/-1000.0;
   accel_z_calibration= z_accel/-1000.0;
   
-printf("calibration complete\nx_gyro: %f\ny_gyro: %f\nz_gyro: %f\nroll: %f\npitch: %f\nz_accel: %f\n\r",x_gyro_calibration,y_gyro_calibration,z_gyro_calibration,roll_calibration,pitch_calibration,accel_z_calibration);
+  printf("calibration complete\nx_gyro: %f\ny_gyro: %f\nz_gyro: %f\nroll: %f\npitch: %f\nz_accel: %f\n\r",x_gyro_calibration,y_gyro_calibration,z_gyro_calibration,roll_calibration,pitch_calibration,accel_z_calibration);
 }
 
 void read_imu()
@@ -285,7 +282,7 @@ void read_imu()
   pitch_angle = pitch_calibration + atan2(-imu_data[4],-imu_data[5]+accel_z_calibration)*(180/3.14159); //pitch
   roll_angle = roll_calibration + atan2(imu_data[3],-imu_data[5]+accel_z_calibration)*(180/3.14159); //roll
 
-  // printf("Gyro  X:%5.2f   Y:%5.2f   Z:%5.2f     Accel  X:%5.2f   Y:%5.2f   Z:%5.2f     Roll:%5.2f     Pitch:%5.2f  \n", imu_data[0], imu_data[1], imu_data[2], imu_data[3], imu_data[4], imu_data[5], roll_angle, pitch_angle);
+  printf("Gyro  X:%5.2f   Y:%5.2f   Z:%5.2f     Accel  X:%5.2f   Y:%5.2f   Z:%5.2f     Roll:%5.2f     Pitch:%5.2f  \n", imu_data[0], imu_data[1], imu_data[2], imu_data[3], imu_data[4], imu_data[5], roll_angle, pitch_angle);
 }
 
 void update_filter()
