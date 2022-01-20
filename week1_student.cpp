@@ -116,8 +116,18 @@ void safety_check(){
     printf("\nPitch is TOO XTREME!: ending program\n\r");
     run_program=0;
   }
-  if (imu_data[0]>300 || imu_data[1]>300 || imu_data[2]>300){
-    printf("\n Gyro detected XTREME rotation!: ending program\n\r");
+  if (imu_data[0]>300 ){
+    printf("\n Gyro X detected XTREME rotation!: ending program\n\r");
+    run_program=0;
+  }
+
+  if ( imu_data[1]>300 ){
+    printf("\n Gyro Y detected XTREME rotation!: ending program\n\r");
+    run_program=0;
+  }
+
+  if (imu_data[2]>300){
+    printf("\n Gyro Z detected XTREME rotation!: ending program\n\r");
     run_program=0;
   }
 
@@ -130,7 +140,6 @@ void safety_check(){
     hb_count = hb_count + 1;
     printf("\nhb_count is %d \n",hb_count);
     if(hb_count > HB_LIM){
-   
       printf("\nHeartbeat not detected!: ending program\n\r");
       run_program=0;
     }
