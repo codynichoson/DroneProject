@@ -20,6 +20,7 @@
 #define PWR_MGMT_1       0x6B // Device defaults to the SLEEP mode
 #define PWR_MGMT_2       0x6C
 
+#define HB_LIM 100
 
 enum Ascale {
   AFS_2G = 0,
@@ -39,6 +40,10 @@ int setup_imu();
 void calibrate_imu();      
 void read_imu();    
 void update_filter();
+void setup_keyboard();
+void comp_filter();
+void safety_check();
+void trap(int signal);
 
 //global variables
 int imu;
@@ -55,20 +60,124 @@ struct timespec te;
 float yaw=0;
 float pitch_angle=0;
 float roll_angle=0;
+float roll = 0; // self add
+float pitch = 0;// self add
+float roll_gyro = 0;// self add
+float pitch_gyro = 0;// self add
+int prev_hb = 0;
+
+
+
+struct Keyboard {
+  char key_press;
+  int heartbeat;
+  int version;
+};
+Keyboard* shared_memory;
+int run_program=1;
+
+// FILE *file_roll = fopen("roll.csv", "w");
 
  
 int main (int argc, char *argv[])
 {
+    
 
     setup_imu();
     calibrate_imu();
+    setup_keyboard();
+    signal(SIGINT, &trap);
     
-    while(1)
+    while(run_program==1)
     {
+      safety_check();
       read_imu();      
-      update_filter();    
+      update_filter();   
+      // printf("\nwe rolling"); 
     }
+    return 0;
 }
+
+void safety_check(){
+  static int hb_count;
+  Keyboard keyboard=*shared_memory;
+
+  int current_hb = keyboard.heartbeat;
+  printf("Previous heartbeat: %d\n", prev_hb);
+  printf("Current heartbeat: %d\n", current_hb);
+
+  // printf("\nkeypress is = %c",keyboard.key_press,keyboard.key_press,keyboard.key_press);
+  // printf("\nhearbeat %d" ,keyboard.heartbeat);
+  // printf("\nhearbeat track %d" ,hb_track);
+
+  if (roll>45 || roll<-45){
+    printf("ending program\n\r");
+    run_program=0;
+  }
+  if (pitch>45 || pitch<-45){
+    printf("ending program\n\r");
+    run_program=0;
+  }
+  if (imu_data[0]>300 || imu_data[1]>300 || imu_data[2]>300){
+    printf("ending program\n\r");
+    run_program=0;
+  }
+
+  if (keyboard.key_press == 32){
+    printf("ending program\n\r");
+    run_program=0;
+  }
+
+  if(current_hb == prev_hb){
+    hb_count = hb_count + 1;
+    printf("\nhb_count is %d \n",hb_count);
+    if(hb_count > HB_LIM){
+   
+      printf("ending program heartbeat killed\n\n");
+      run_program=0;
+    }
+
+  }else{
+    hb_count = 0;
+    printf("heartbeat is fine\n\n");
+  }
+
+  prev_hb = current_hb;
+
+}
+
+void setup_keyboard()
+{
+
+  int segment_id;   
+  struct shmid_ds shmbuffer; 
+  int segment_size; 
+  const int shared_segment_size = 0x6400; 
+  int smhkey=33222;
+  
+  /* Allocate a shared memory segment.  */ 
+  segment_id = shmget (smhkey, shared_segment_size,IPC_CREAT | 0666); 
+  /* Attach the shared memory segment.  */ 
+  shared_memory = (Keyboard*) shmat (segment_id, 0, 0); 
+  printf ("shared memory attached at address %p\n", shared_memory); 
+  /* Determine the segment's size. */ 
+  shmctl (segment_id, IPC_STAT, &shmbuffer); 
+  segment_size  =               shmbuffer.shm_segsz; 
+  printf ("segment size: %d\n", segment_size); 
+  /* Write a string to the shared memory segment.  */ 
+  //sprintf (shared_memory, "test!!!!."); 
+
+}
+
+//when cntrl+c pressed, kill motors
+void trap(int signal)
+{
+ 
+   printf("ending program in trap\n\r");
+
+   run_program=0;
+}
+
 
 void calibrate_imu()
 {
@@ -176,7 +285,7 @@ void read_imu()
   pitch_angle = pitch_calibration + atan2(-imu_data[4],-imu_data[5]+accel_z_calibration)*(180/3.14159); //pitch
   roll_angle = roll_calibration + atan2(imu_data[3],-imu_data[5]+accel_z_calibration)*(180/3.14159); //roll
 
-  printf("Gyro  X:%5.2f   Y:%5.2f   Z:%5.2f     Accel  X:%5.2f   Y:%5.2f   Z:%5.2f     Roll:%5.2f     Pitch:%5.2f  \n", imu_data[0], imu_data[1], imu_data[2], imu_data[3], imu_data[4], imu_data[5], roll_angle, pitch_angle);
+  // printf("Gyro  X:%5.2f   Y:%5.2f   Z:%5.2f     Accel  X:%5.2f   Y:%5.2f   Z:%5.2f     Roll:%5.2f     Pitch:%5.2f  \n", imu_data[0], imu_data[1], imu_data[2], imu_data[3], imu_data[4], imu_data[5], roll_angle, pitch_angle);
 }
 
 void update_filter()
@@ -197,6 +306,22 @@ void update_filter()
   time_prev=time_curr;
   
   //comp. filter for roll, pitch here: 
+  float roll_gyro_delta;
+  float pitch_gyro_delta;
+
+  double A=0.02;
+  roll_gyro_delta = imu_data[1]*imu_diff;
+  pitch_gyro_delta = imu_data[0]*imu_diff;
+
+  roll_gyro = roll_gyro + roll_gyro_delta;
+  pitch_gyro = pitch_gyro + pitch_gyro_delta;
+
+  roll = roll_angle*A+(1-A)*(roll_gyro_delta+roll);
+  pitch = pitch_angle*A+(1-A)*(pitch_gyro_delta+pitch);
+
+  // fprintf(file_roll,"\nPitch: accel, %5.2f , gyro, %5.2f , filtered, %5.2f  , ROLL: accel, %5.2f , gyro, %5.2f , filtered, %5.2f",pitch_angle, pitch_gyro , pitch, roll_angle, roll_gyro , roll);
+  // printf("\nPitch: accel, %5.2f , gyro, %5.2f , filtered, %5.2f  , ROLL: accel, %5.2f , gyro, %5.2f , filtered, %5.2f",pitch_angle, pitch_gyro , pitch, roll_angle, roll_gyro , roll);
+
 }
 
 int setup_imu()
