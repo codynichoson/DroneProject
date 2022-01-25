@@ -22,6 +22,16 @@
 
 #define HB_LIM 100 // heartbeat counter threshold
 
+//add constants
+#define PWM_MAX 1300
+#define frequency 25000000.0
+#define LED0 0x6			
+#define LED0_ON_L 0x6		
+#define LED0_ON_H 0x7		
+#define LED0_OFF_L 0x8		
+#define LED0_OFF_H 0x9		
+#define LED_MULTIPLYER 4	
+
 enum Ascale {
   AFS_2G = 0,
   AFS_4G,
@@ -44,6 +54,10 @@ void setup_keyboard();
 void comp_filter();
 void safety_check();
 void trap(int signal);
+void motor_pwm();
+void set_PWM( uint8_t channel, float time_on_us);
+void init_pwm();
+void init_motor(uint8_t channel);
 
 //global variables
 int imu;
@@ -65,6 +79,15 @@ float pitch = 0;// self add
 float roll_gyro = 0;// self add
 float pitch_gyro = 0;// self add
 int prev_hb = 0;
+int pwm;
+
+int motor0_pwm;
+int motor1_pwm;
+int motor2_pwm;
+int motor3_pwm;
+
+
+ 
 
 
 struct Keyboard {
@@ -76,11 +99,18 @@ Keyboard* shared_memory;
 int run_program=1;
 
 // FILE *file_roll = fopen("roll.csv", "w");
+FILE *day3_plot = fopen("day3_plot.csv", "w");
 
  
 int main (int argc, char *argv[])
 {
-
+    //in main function before calibrate imu add
+    init_pwm();
+    init_motor(0);
+    init_motor(1);
+    init_motor(2);
+    init_motor(3);
+    delay(1000);
     setup_imu();
     calibrate_imu();
     setup_keyboard();
@@ -91,9 +121,147 @@ int main (int argc, char *argv[])
       safety_check();
       read_imu();      
       update_filter();   
+      motor_pwm();
       // printf("\nwe rolling"); 
     }
     return 0;
+}
+
+void motor_pwm(){
+
+  int neutral_power = 1150;
+  int P = 5;
+
+  motor1_pwm = neutral_power + pitch*P;
+  motor2_pwm = neutral_power + pitch*P;
+
+  motor3_pwm = neutral_power - pitch*P;
+  motor0_pwm = neutral_power - pitch*P;
+
+  if(motor0_pwm > PWM_MAX){
+    motor0_pwm = PWM_MAX;
+  }
+  if(motor1_pwm > PWM_MAX){
+    motor1_pwm = PWM_MAX;
+  }
+  if(motor2_pwm > PWM_MAX){
+    motor2_pwm = PWM_MAX;
+  }
+  if(motor3_pwm > PWM_MAX){
+    motor3_pwm = PWM_MAX;
+  }
+
+  if(motor0_pwm < 1000){
+    motor0_pwm = 1000;
+  }
+  if(motor1_pwm < 1000){
+    motor1_pwm = 1000;
+  }
+  if(motor2_pwm < 1000){
+    motor2_pwm = 1000;
+  }
+  if(motor3_pwm < 1000){
+    motor3_pwm = 1000;
+  }
+
+  set_PWM(1,motor1_pwm);
+  set_PWM(2,motor2_pwm);
+  set_PWM(3,motor3_pwm);
+  set_PWM(0,motor0_pwm);
+
+
+  
+
+
+}
+
+void init_pwm()
+{
+
+    pwm=wiringPiI2CSetup (0x40);
+    if(pwm==-1)
+    {
+      printf("-----cant connect to I2C device %d --------\n",pwm);
+     
+    }
+    else
+    {
+  
+      float freq =400.0*.95;
+      float prescaleval = 25000000;
+      prescaleval /= 4096;
+      prescaleval /= freq;
+      prescaleval -= 1;
+      uint8_t prescale = floor(prescaleval+0.5);
+      int settings = wiringPiI2CReadReg8(pwm, 0x00) & 0x7F;
+      int sleep	= settings | 0x10;
+      int wake 	= settings & 0xef;
+      int restart = wake | 0x80;
+      wiringPiI2CWriteReg8(pwm, 0x00, sleep);
+      wiringPiI2CWriteReg8(pwm, 0xfe, prescale);
+      wiringPiI2CWriteReg8(pwm, 0x00, wake);
+      delay(10);
+      wiringPiI2CWriteReg8(pwm, 0x00, restart|0x20);
+    }
+}
+
+
+
+void init_motor(uint8_t channel)
+{
+	int on_value=0;
+
+	int time_on_us=900;
+	uint16_t off_value=round((time_on_us*4096.f)/(1000000.f/400.0));
+
+	wiringPiI2CWriteReg8(pwm, LED0_ON_L + LED_MULTIPLYER * channel, on_value & 0xFF);
+	wiringPiI2CWriteReg8(pwm, LED0_ON_H + LED_MULTIPLYER * channel, on_value >> 8);
+	wiringPiI2CWriteReg8(pwm, LED0_OFF_L + LED_MULTIPLYER * channel, off_value & 0xFF);
+	wiringPiI2CWriteReg8(pwm, LED0_OFF_H + LED_MULTIPLYER * channel, off_value >> 8);
+	delay(100);
+
+	 time_on_us=1200;
+	 off_value=round((time_on_us*4096.f)/(1000000.f/400.0));
+
+	wiringPiI2CWriteReg8(pwm, LED0_ON_L + LED_MULTIPLYER * channel, on_value & 0xFF);
+	wiringPiI2CWriteReg8(pwm, LED0_ON_H + LED_MULTIPLYER * channel, on_value >> 8);
+	wiringPiI2CWriteReg8(pwm, LED0_OFF_L + LED_MULTIPLYER * channel, off_value & 0xFF);
+	wiringPiI2CWriteReg8(pwm, LED0_OFF_H + LED_MULTIPLYER * channel, off_value >> 8);
+	delay(100);
+
+	 time_on_us=1000;
+	 off_value=round((time_on_us*4096.f)/(1000000.f/400.0));
+
+	wiringPiI2CWriteReg8(pwm, LED0_ON_L + LED_MULTIPLYER * channel, on_value & 0xFF);
+	wiringPiI2CWriteReg8(pwm, LED0_ON_H + LED_MULTIPLYER * channel, on_value >> 8);
+	wiringPiI2CWriteReg8(pwm, LED0_OFF_L + LED_MULTIPLYER * channel, off_value & 0xFF);
+	wiringPiI2CWriteReg8(pwm, LED0_OFF_H + LED_MULTIPLYER * channel, off_value >> 8);
+	delay(100);
+
+}
+
+
+void set_PWM( uint8_t channel, float time_on_us)
+{
+  if(run_program==1)
+  {
+    if(time_on_us>PWM_MAX)
+    {
+      time_on_us=PWM_MAX;
+    }
+    else if(time_on_us<1000)
+    {
+      time_on_us=1000;
+    }
+  	uint16_t off_value=round((time_on_us*4096.f)/(1000000.f/400.0));
+  	wiringPiI2CWriteReg16(pwm, LED0_OFF_L + LED_MULTIPLYER * channel,off_value);
+  }
+  else
+  {  
+    time_on_us=1000;   
+  	uint16_t off_value=round((time_on_us*4096.f)/(1000000.f/400.0));
+  	wiringPiI2CWriteReg16(pwm, LED0_OFF_L + LED_MULTIPLYER * channel,off_value);
+  }
 }
 
 void safety_check(){
@@ -138,7 +306,7 @@ void safety_check(){
 
   if(current_hb == prev_hb){
     hb_count = hb_count + 1;
-    printf("\nhb_count is %d \n",hb_count);
+    // printf("\nhb_count is %d \n",hb_count);
     if(hb_count > HB_LIM){
       printf("\nHeartbeat not detected!: ending program\n\r");
       run_program=0;
@@ -179,9 +347,15 @@ void setup_keyboard()
 void trap(int signal)
 {
  
-   printf("Killing motors!: ending program in trap\n\r");
+    printf("Killing motors!: ending program in trap\n\r");
+    set_PWM(1,1000);
+    set_PWM(2,1000);
+    set_PWM(3,1000);
+    set_PWM(0,1000);
 
-   run_program=0;
+
+
+    run_program=0;
 }
 
 
@@ -291,7 +465,7 @@ void read_imu()
   pitch_angle = pitch_calibration + atan2(-imu_data[4],-imu_data[5]+accel_z_calibration)*(180/3.14159); //pitch
   roll_angle = roll_calibration + atan2(imu_data[3],-imu_data[5]+accel_z_calibration)*(180/3.14159); //roll
 
-  printf("Gyro  X:%5.2f   Y:%5.2f   Z:%5.2f     Accel  X:%5.2f   Y:%5.2f   Z:%5.2f     Roll:%5.2f     Pitch:%5.2f  \n", imu_data[0], imu_data[1], imu_data[2], imu_data[3], imu_data[4], imu_data[5], roll_angle, pitch_angle);
+  // printf("Gyro  X:%5.2f   Y:%5.2f   Z:%5.2f     Accel  X:%5.2f   Y:%5.2f   Z:%5.2f     Roll:%5.2f     Pitch:%5.2f  \n", imu_data[0], imu_data[1], imu_data[2], imu_data[3], imu_data[4], imu_data[5], roll_angle, pitch_angle);
 }
 
 void update_filter()
@@ -326,6 +500,7 @@ void update_filter()
   pitch = pitch_angle*A+(1-A)*(pitch_gyro_delta+pitch);
 
   // fprintf(file_roll,"\nPitch: accel, %5.2f , gyro, %5.2f , filtered, %5.2f  , ROLL: accel, %5.2f , gyro, %5.2f , filtered, %5.2f",pitch_angle, pitch_gyro , pitch, roll_angle, roll_gyro , roll);
+  fprintf(day3_plot,"\n Pitch: accel, %5.2f , filtered, %5.2f , pwm front, %d, pwm back , %d", pitch_angle, pitch, motor0_pwm, motor1_pwm);
   // printf("\nPitch: accel, %5.2f , gyro, %5.2f , filtered, %5.2f  , ROLL: accel, %5.2f , gyro, %5.2f , filtered, %5.2f",pitch_angle, pitch_gyro , pitch, roll_angle, roll_gyro , roll);
 
 }
