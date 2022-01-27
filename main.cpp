@@ -23,7 +23,7 @@
 #define HB_LIM 100 // heartbeat counter threshold
 
 //add constants
-#define PWM_MAX 1300
+#define PWM_MAX 1700
 #define frequency 25000000.0
 #define LED0 0x6			
 #define LED0_ON_L 0x6		
@@ -81,6 +81,10 @@ float pitch_gyro = 0;// self add
 int prev_hb = 0;
 int pwm;
 
+float roll_gyro_delta;
+float pitch_gyro_delta;
+float pitch_I_term;
+
 int motor0_pwm;
 int motor1_pwm;
 int motor2_pwm;
@@ -129,14 +133,47 @@ int main (int argc, char *argv[])
 
 void motor_pwm(){
 
-  int neutral_power = 1150;
-  int P = 5;
+  int neutral_power = 1350;
+  int P = 15;
+  int D = 690;
+  float I = 0.05;
 
-  motor1_pwm = neutral_power + pitch*P;
-  motor2_pwm = neutral_power + pitch*P;
+  // motor1_pwm = neutral_power + pitch*P;     // p controller
+  // motor2_pwm = neutral_power + pitch*P;
 
-  motor3_pwm = neutral_power - pitch*P;
-  motor0_pwm = neutral_power - pitch*P;
+  // motor3_pwm = neutral_power - pitch*P;
+  // motor0_pwm = neutral_power - pitch*P;
+
+  // motor1_pwm = neutral_power + pitch_gyro_delta*D; // D controler
+  // motor2_pwm = neutral_power + pitch_gyro_delta*D;
+
+  // motor3_pwm = neutral_power - pitch_gyro_delta*D;
+  // motor0_pwm = neutral_power - pitch_gyro_delta*D;
+
+  // motor1_pwm = neutral_power + pitch_gyro_delta*D + pitch*P ; // PD controller
+  // motor2_pwm = neutral_power + pitch_gyro_delta*D+ pitch*P ;
+
+  // motor3_pwm = neutral_power - pitch_gyro_delta*D - pitch*P ;
+  // motor0_pwm = neutral_power - pitch_gyro_delta*D - pitch*P ;
+  
+  pitch_I_term += pitch*I;
+
+  if(pitch_I_term > 150){
+    pitch_I_term = 150;
+  }
+  if(pitch_I_term < -150){
+    pitch_I_term = -150;
+  }
+  printf("\npitch I term %f : pitch is %f",pitch_I_term,pitch);
+  
+
+
+  motor1_pwm = neutral_power + pitch_gyro_delta*D + pitch*P + pitch_I_term;
+  motor2_pwm = neutral_power + pitch_gyro_delta*D + pitch*P + pitch_I_term;
+
+  motor3_pwm = neutral_power - pitch_gyro_delta*D - pitch*P - pitch_I_term;
+  motor0_pwm = neutral_power - pitch_gyro_delta*D - pitch*P - pitch_I_term;
+
 
   if(motor0_pwm > PWM_MAX){
     motor0_pwm = PWM_MAX;
@@ -314,7 +351,7 @@ void safety_check(){
 
   }else{
     hb_count = 0;
-    printf("\nheartbeat is fine\n");
+    // printf("\nheartbeat is fine\n");
   }
   prev_hb = current_hb;
 
@@ -486,10 +523,9 @@ void update_filter()
   time_prev=time_curr;
   
   //comp. filter for roll, pitch here: 
-  float roll_gyro_delta;
-  float pitch_gyro_delta;
+  
 
-  double A=0.02;
+  double A=0.001;
   roll_gyro_delta = imu_data[1]*imu_diff;
   pitch_gyro_delta = imu_data[0]*imu_diff;
 
