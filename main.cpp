@@ -136,7 +136,7 @@ void motor_pwm(){
   int neutral_power = 1350;
   int P = 15;
   int D = 690;
-  float I = 0.0420;
+  float I = 0.042069;
 
   // motor1_pwm = neutral_power + pitch*P;     // p controller
   // motor2_pwm = neutral_power + pitch*P;
