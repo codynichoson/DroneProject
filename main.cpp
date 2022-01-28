@@ -10,7 +10,7 @@
 #include <sys/stat.h>
 #include <curses.h>
 
-#define frequency 25000000.0
+#define frequency  25000000.0
 #define CONFIG           0x1A
 #define SMPLRT_DIV       0x19
 #define GYRO_CONFIG      0x1B
@@ -23,14 +23,15 @@
 #define HB_LIM 100 // heartbeat counter threshold
 
 //add constants
-#define PWM_MAX 1700
-#define frequency 25000000.0
-#define LED0 0x6			
-#define LED0_ON_L 0x6		
-#define LED0_ON_H 0x7		
-#define LED0_OFF_L 0x8		
-#define LED0_OFF_H 0x9		
-#define LED_MULTIPLYER 4	
+#define PWM_MAX          1700
+#define NEUTRAL_PWR      1350
+#define frequency  25000000.0
+#define LED0              0x6			
+#define LED0_ON_L         0x6		
+#define LED0_ON_H         0x7		
+#define LED0_OFF_L        0x8		
+#define LED0_OFF_H        0x9		
+#define LED_MULTIPLYER      4	
 
 enum Ascale {
   AFS_2G = 0,
@@ -90,10 +91,6 @@ int motor1_pwm;
 int motor2_pwm;
 int motor3_pwm;
 
-
- 
-
-
 struct Keyboard {
   char key_press;
   int heartbeat;
@@ -103,9 +100,8 @@ Keyboard* shared_memory;
 int run_program=1;
 
 // FILE *file_roll = fopen("roll.csv", "w");
-FILE *day3_plot = fopen("day3_plot.csv", "w");
+FILE *plot = fopen("plot.csv", "w");
 
- 
 int main (int argc, char *argv[])
 {
     //in main function before calibrate imu add
@@ -132,29 +128,29 @@ int main (int argc, char *argv[])
 }
 
 void motor_pwm(){
-
-  int neutral_power = 1350;
+  
+  // gains
   int P = 15;
   int D = 690;
   float I = 0.042069;
 
-  // motor1_pwm = neutral_power + pitch*P;     // p controller
-  // motor2_pwm = neutral_power + pitch*P;
+  // motor1_pwm = NEUTRAL_PWR + pitch*P;     // p controller
+  // motor2_pwm = NEUTRAL_PWR + pitch*P;
 
-  // motor3_pwm = neutral_power - pitch*P;
-  // motor0_pwm = neutral_power - pitch*P;
+  // motor3_pwm = NEUTRAL_PWR - pitch*P;
+  // motor0_pwm = NEUTRAL_PWR - pitch*P;
 
-  // motor1_pwm = neutral_power + pitch_gyro_delta*D; // D controler
-  // motor2_pwm = neutral_power + pitch_gyro_delta*D;
+  // motor1_pwm = NEUTRAL_PWR + pitch_gyro_delta*D; // D controler
+  // motor2_pwm = NEUTRAL_PWR + pitch_gyro_delta*D;
 
-  // motor3_pwm = neutral_power - pitch_gyro_delta*D;
-  // motor0_pwm = neutral_power - pitch_gyro_delta*D;
+  // motor3_pwm = NEUTRAL_PWR - pitch_gyro_delta*D;
+  // motor0_pwm = NEUTRAL_PWR - pitch_gyro_delta*D;
 
-  // motor1_pwm = neutral_power + pitch_gyro_delta*D + pitch*P ; // PD controller
-  // motor2_pwm = neutral_power + pitch_gyro_delta*D+ pitch*P ;
+  // motor1_pwm = NEUTRAL_PWR + pitch_gyro_delta*D + pitch*P ; // PD controller
+  // motor2_pwm = NEUTRAL_PWR + pitch_gyro_delta*D+ pitch*P ;
 
-  // motor3_pwm = neutral_power - pitch_gyro_delta*D - pitch*P ;
-  // motor0_pwm = neutral_power - pitch_gyro_delta*D - pitch*P ;
+  // motor3_pwm = NEUTRAL_PWR - pitch_gyro_delta*D - pitch*P ;
+  // motor0_pwm = NEUTRAL_PWR - pitch_gyro_delta*D - pitch*P ;
   
   pitch_I_term += pitch*I;
 
@@ -165,16 +161,14 @@ void motor_pwm(){
     pitch_I_term = -150;
   }
   printf("\npitch I term %f : pitch is %f",pitch_I_term,pitch);
-  
 
+  motor1_pwm = NEUTRAL_PWR + pitch_gyro_delta*D + pitch*P + pitch_I_term;
+  motor2_pwm = NEUTRAL_PWR + pitch_gyro_delta*D + pitch*P + pitch_I_term;
 
-  motor1_pwm = neutral_power + pitch_gyro_delta*D + pitch*P + pitch_I_term;
-  motor2_pwm = neutral_power + pitch_gyro_delta*D + pitch*P + pitch_I_term;
+  motor3_pwm = NEUTRAL_PWR - pitch_gyro_delta*D - pitch*P - pitch_I_term;
+  motor0_pwm = NEUTRAL_PWR - pitch_gyro_delta*D - pitch*P - pitch_I_term;
 
-  motor3_pwm = neutral_power - pitch_gyro_delta*D - pitch*P - pitch_I_term;
-  motor0_pwm = neutral_power - pitch_gyro_delta*D - pitch*P - pitch_I_term;
-
-
+  // set PWM max value
   if(motor0_pwm > PWM_MAX){
     motor0_pwm = PWM_MAX;
   }
@@ -188,6 +182,7 @@ void motor_pwm(){
     motor3_pwm = PWM_MAX;
   }
 
+  // set PWM min value
   if(motor0_pwm < 1000){
     motor0_pwm = 1000;
   }
@@ -201,14 +196,11 @@ void motor_pwm(){
     motor3_pwm = 1000;
   }
 
+  // send PWM to motors
   set_PWM(1,motor1_pwm);
   set_PWM(2,motor2_pwm);
   set_PWM(3,motor3_pwm);
   set_PWM(0,motor0_pwm);
-
-
-  
-
 
 }
 
@@ -536,7 +528,7 @@ void update_filter()
   pitch = pitch_angle*A+(1-A)*(pitch_gyro_delta+pitch);
 
   // fprintf(file_roll,"\nPitch: accel, %5.2f , gyro, %5.2f , filtered, %5.2f  , ROLL: accel, %5.2f , gyro, %5.2f , filtered, %5.2f",pitch_angle, pitch_gyro , pitch, roll_angle, roll_gyro , roll);
-  fprintf(day3_plot,"\n Pitch: accel, %5.2f , filtered, %5.2f , pwm front, %d, pwm back , %d", pitch_angle, pitch, motor0_pwm, motor1_pwm);
+  fprintf(plot,"\n Pitch: accel, %5.2f , filtered, %5.2f , pwm front, %d, pwm back , %d", pitch_angle, pitch, motor0_pwm, motor1_pwm);
   // printf("\nPitch: accel, %5.2f , gyro, %5.2f , filtered, %5.2f  , ROLL: accel, %5.2f , gyro, %5.2f , filtered, %5.2f",pitch_angle, pitch_gyro , pitch, roll_angle, roll_gyro , roll);
 
 }
