@@ -23,8 +23,8 @@
 #define HB_LIM 100 // heartbeat counter threshold
 
 //add constants
-#define PWM_MAX          1700
-#define NEUTRAL_PWR      1350
+#define PWM_MAX          1800
+#define NEUTRAL_PWR      1400
 #define frequency  25000000.0
 #define LED0              0x6			
 #define LED0_ON_L         0x6		
@@ -75,12 +75,15 @@ struct timespec te;
 float yaw=0;
 float pitch_angle=0;
 float roll_angle=0;
-float roll = 0; // self add
-float pitch = 0;// self add
+float roll_position = 0; // self add
+float pitch_position = 0;// self add
 float roll_gyro = 0;// self add
 float pitch_gyro = 0;// self add
 int prev_hb = 0;
 int pwm;
+bool pause = false;
+
+float d_pitch;
 
 float roll_gyro_delta;
 float pitch_gyro_delta;
@@ -88,21 +91,36 @@ float pitch_I_term;
 
 int neutral_thrust = 1400;
 int thrust_gain = 150;
+int thruster;
 
 int motor0_pwm;
 int motor1_pwm;
 int motor2_pwm;
 int motor3_pwm;
 
+
 struct Keyboard {
-  char key_press;
-  int heartbeat;
-  int version;
+  int keypress;
+  int pitch;
+  int roll;
+  int yaw;
+  int thrust;
+  int sequence_num;
 };
+// };
+// struct Keyboard {
+//   int keypress; //
+//   int pitch;
+//   int roll;
+//   int yaw;
+//   int thrust;
+//   int sequence_num;
+// };
+
 Keyboard* shared_memory;
 int run_program=1;
 
-// FILE *file_roll = fopen("roll.csv", "w");
+// FILE *file_roll = fopen("roll_position.csv", "w");
 FILE *plot = fopen("plot.csv", "w");
 
 int main (int argc, char *argv[])
@@ -131,17 +149,22 @@ int main (int argc, char *argv[])
 }
 
 void motor_pwm(){
+  Keyboard keyboard=*shared_memory;
   
   // gains
-  int P_pitch = 15;
-  int D_pitch = 690;
-  float I_pitch = 0.042069;
+  int P_pitch = 17; //15
+  int D_pitch = 1000; //690
+  float I_pitch = 0.02; // 0.042069
+
+  int P_roll = 15;
+  int D_roll = 690;
+  float I_roll = 0.042069;
 
   // // P_pitch CONTROLLER
-  // motor1_pwm = NEUTRAL_PWR + pitch*P_pitch;
-  // motor2_pwm = NEUTRAL_PWR + pitch*P_pitch;
-  // motor3_pwm = NEUTRAL_PWR - pitch*P_pitch;
-  // motor0_pwm = NEUTRAL_PWR - pitch*P_pitch;
+  // motor1_pwm = NEUTRAL_PWR + pitch_position*P_pitch;
+  // motor2_pwm = NEUTRAL_PWR + pitch_position*P_pitch;
+  // motor3_pwm = NEUTRAL_PWR - pitch_position*P_pitch;
+  // motor0_pwm = NEUTRAL_PWR - pitch_position*P_pitch;
 
   // // D_pitch CONTROLLER
   // motor1_pwm = NEUTRAL_PWR + pitch_gyro_delta*D_pitch;
@@ -150,12 +173,12 @@ void motor_pwm(){
   // motor0_pwm = NEUTRAL_PWR - pitch_gyro_delta*D_pitch;
 
   // // PD CONTROLLER
-  // motor1_pwm = NEUTRAL_PWR + pitch_gyro_delta*D_pitch + pitch*P_pitch ; 
-  // motor2_pwm = NEUTRAL_PWR + pitch_gyro_delta*D_pitch+ pitch*P_pitch ;
-  // motor3_pwm = NEUTRAL_PWR - pitch_gyro_delta*D_pitch - pitch*P_pitch ;
-  // motor0_pwm = NEUTRAL_PWR - pitch_gyro_delta*D_pitch - pitch*P_pitch ;
+  // motor1_pwm = NEUTRAL_PWR + pitch_gyro_delta*D_pitch + pitch_position*P_pitch ; 
+  // motor2_pwm = NEUTRAL_PWR + pitch_gyro_delta*D_pitch+ pitch_position*P_pitch ;
+  // motor3_pwm = NEUTRAL_PWR - pitch_gyro_delta*D_pitch - pitch_position*P_pitch ;
+  // motor0_pwm = NEUTRAL_PWR - pitch_gyro_delta*D_pitch - pitch_position*P_pitch ;
   
-  pitch_I_term += pitch*I_pitch;
+  pitch_I_term += (d_pitch+pitch_position)*I_pitch;
 
   if(pitch_I_term > 150){
     pitch_I_term = 150;
@@ -163,13 +186,25 @@ void motor_pwm(){
   if(pitch_I_term < -150){
     pitch_I_term = -150;
   }
-  // printf("\npitch I_pitch term %f : pitch is %f",pitch_I_term,pitch);
+  // printf("\npitch I_pitch term %f : pitch_position is %f",pitch_I_term,pitch_position);
 
-  motor1_pwm = thrust + pitch_gyro_delta*D_pitch + pitch*P_pitch + pitch_I_term;
-  motor2_pwm = thrust + pitch_gyro_delta*D_pitch + pitch*P_pitch + pitch_I_term;
+  //thrust scaling
+  thruster = (keyboard.thrust/128.0)*150+1250;
+  // printf("\nthuster = %d, keyboard thrust = %d",thruster,keyboard.thrust);
 
-  motor3_pwm = thrust - pitch_gyro_delta*D_pitch - pitch*P_pitch - pitch_I_term;
-  motor0_pwm = thrust - pitch_gyro_delta*D_pitch - pitch*P_pitch - pitch_I_term;
+  d_pitch = ((keyboard.pitch-128.0)/128)*15;
+  
+
+  // thruster = (keyboard.thrust - 0) * (1800-1000)/(255-0)+1000;
+  // thruster = ((keyboard.thrust/255)*1800) + 1000
+  printf("\n desired = %5.2f, current = %5.2f,  ",d_pitch, pitch_position);
+
+
+  motor1_pwm = thruster + pitch_gyro_delta*D_pitch + (d_pitch+pitch_position)*P_pitch + pitch_I_term;
+  motor2_pwm = thruster + pitch_gyro_delta*D_pitch + (d_pitch+pitch_position)*P_pitch + pitch_I_term;
+
+  motor3_pwm = thruster - pitch_gyro_delta*D_pitch - (d_pitch+pitch_position)*P_pitch - pitch_I_term;
+  motor0_pwm = thruster - pitch_gyro_delta*D_pitch - (d_pitch+pitch_position)*P_pitch - pitch_I_term;
 
   // set PWM max value
   if(motor0_pwm > PWM_MAX){
@@ -200,10 +235,17 @@ void motor_pwm(){
   }
 
   // send PWM to motors
-  set_PWM(1,motor1_pwm);
-  set_PWM(2,motor2_pwm);
-  set_PWM(3,motor3_pwm);
-  set_PWM(0,motor0_pwm);
+  if(pause == false){
+    set_PWM(1,motor1_pwm);
+    set_PWM(2,motor2_pwm);
+    set_PWM(3,motor3_pwm);
+    set_PWM(0,motor0_pwm);
+  } else{
+    set_PWM(1,1000);
+    set_PWM(2,1000);
+    set_PWM(3,1000);
+    set_PWM(0,1000);
+  }
 
 }
 
@@ -300,7 +342,7 @@ void safety_check(){
   static int hb_count;
   Keyboard keyboard=*shared_memory;
 
-  int current_hb = keyboard.heartbeat;
+  int current_hb = keyboard.sequence_num;
   // printf("Previous heartbeat: %d\n", prev_hb);
   // printf("Current heartbeat: %d\n", current_hb);
 
@@ -308,11 +350,30 @@ void safety_check(){
   // printf("\nhearbeat %d" ,keyboard.heartbeat);
   // printf("\nhearbeat track %d" ,hb_track);
 
-  if (roll>45 || roll<-45){
+  // A button Kill
+  if(keyboard.keypress == 32){ 
+    run_program=0;
+  }
+  // B button Pause
+  if(keyboard.keypress == 33){ 
+    pause = true;
+  }
+  // X button Unpause
+  if(keyboard.keypress == 34){ 
+    pause = false;
+  }
+  // Y button Calibrate
+  if(keyboard.keypress == 35){ 
+    calibrate_imu();
+  }
+  
+
+
+  if (roll_position>45 || roll_position<-45){
     printf("\nRoll is TOO XTREME!:ending program\n\r");
     run_program=0;
   }
-  if (pitch>45 || pitch<-45){
+  if (pitch_position>45 || pitch_position<-45){
     printf("\nPitch is TOO XTREME!: ending program\n\r");
     run_program=0;
   }
@@ -331,7 +392,7 @@ void safety_check(){
     run_program=0;
   }
 
-  if (keyboard.key_press == 32){
+  if (keyboard.keypress == 32){
     printf("\nYou pressed spacebar: ending program\n\r");
     run_program=0;
   }
@@ -494,8 +555,8 @@ void read_imu()
   }          
   imu_data[2]=z_gyro_calibration+((float)vw/32767.0)*500;////todo: convert vw from raw values to degrees/second
   
-  pitch_angle = pitch_calibration + atan2(-imu_data[4],-imu_data[5]+accel_z_calibration)*(180/3.14159); //pitch
-  roll_angle = roll_calibration + atan2(imu_data[3],-imu_data[5]+accel_z_calibration)*(180/3.14159); //roll
+  pitch_angle = pitch_calibration + atan2(-imu_data[4],-imu_data[5]+accel_z_calibration)*(180/3.14159); //pitch_position
+  roll_angle = roll_calibration + atan2(imu_data[3],-imu_data[5]+accel_z_calibration)*(180/3.14159); //roll_position
 
   // printf("Gyro  X:%5.2f   Y:%5.2f   Z:%5.2f     Accel  X:%5.2f   Y:%5.2f   Z:%5.2f     Roll:%5.2f     Pitch:%5.2f  \n", imu_data[0], imu_data[1], imu_data[2], imu_data[3], imu_data[4], imu_data[5], roll_angle, pitch_angle);
 }
@@ -517,7 +578,7 @@ void update_filter()
   imu_diff=imu_diff/1000000000;
   time_prev=time_curr;
   
-  //comp. filter for roll, pitch here: 
+  //comp. filter for roll_position, pitch_position here: 
   
 
   double A=0.001;
@@ -527,12 +588,13 @@ void update_filter()
   roll_gyro = roll_gyro + roll_gyro_delta;
   pitch_gyro = pitch_gyro + pitch_gyro_delta;
 
-  roll = roll_angle*A+(1-A)*(roll_gyro_delta+roll);
-  pitch = pitch_angle*A+(1-A)*(pitch_gyro_delta+pitch);
+  roll_position = roll_angle*A+(1-A)*(roll_gyro_delta+roll_position);
+  pitch_position = pitch_angle*A+(1-A)*(pitch_gyro_delta+pitch_position);
 
-  // fprintf(file_roll,"\nPitch: accel, %5.2f , gyro, %5.2f , filtered, %5.2f  , ROLL: accel, %5.2f , gyro, %5.2f , filtered, %5.2f",pitch_angle, pitch_gyro , pitch, roll_angle, roll_gyro , roll);
-  fprintf(plot,"\n Pitch: accel, %5.2f , filtered, %5.2f , pwm front, %d, pwm back , %d", pitch_angle, pitch, motor0_pwm, motor1_pwm);
-  // printf("\nPitch: accel, %5.2f , gyro, %5.2f , filtered, %5.2f  , ROLL: accel, %5.2f , gyro, %5.2f , filtered, %5.2f",pitch_angle, pitch_gyro , pitch, roll_angle, roll_gyro , roll);
+  // fprintf(file_roll,"\nPitch: accel, %5.2f , gyro, %5.2f , filtered, %5.2f  , ROLL: accel, %5.2f , gyro, %5.2f , filtered, %5.2f",pitch_angle, pitch_gyro , pitch_position, roll_angle, roll_gyro , roll_position);
+  // fprintf(plot,"\n Pitch: accel, %5.2f , filtered, %5.2f , pwm front, %d, pwm back , %d", pitch_angle, pitch_position, motor0_pwm, motor1_pwm);
+  // printf("\nPitch: accel, %5.2f , gyro, %5.2f , filtered, %5.2f  , ROLL: accel, %5.2f , gyro, %5.2f , filtered, %5.2f",pitch_angle, pitch_gyro , pitch_position, roll_angle, roll_gyro , roll_position);
+  fprintf(plot,"\n Pitch:, %5.2f , desired, %5.2f ", pitch_position, d_pitch);
 
 }
 
