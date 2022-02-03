@@ -86,6 +86,9 @@ float roll_gyro_delta;
 float pitch_gyro_delta;
 float pitch_I_term;
 
+int neutral_thrust = 1400;
+int thrust_gain = 150;
+
 int motor0_pwm;
 int motor1_pwm;
 int motor2_pwm;
@@ -130,29 +133,29 @@ int main (int argc, char *argv[])
 void motor_pwm(){
   
   // gains
-  int P = 15;
-  int D = 690;
-  float I = 0.042069;
+  int P_pitch = 15;
+  int D_pitch = 690;
+  float I_pitch = 0.042069;
 
-  // motor1_pwm = NEUTRAL_PWR + pitch*P;     // p controller
-  // motor2_pwm = NEUTRAL_PWR + pitch*P;
+  // // P_pitch CONTROLLER
+  // motor1_pwm = NEUTRAL_PWR + pitch*P_pitch;
+  // motor2_pwm = NEUTRAL_PWR + pitch*P_pitch;
+  // motor3_pwm = NEUTRAL_PWR - pitch*P_pitch;
+  // motor0_pwm = NEUTRAL_PWR - pitch*P_pitch;
 
-  // motor3_pwm = NEUTRAL_PWR - pitch*P;
-  // motor0_pwm = NEUTRAL_PWR - pitch*P;
+  // // D_pitch CONTROLLER
+  // motor1_pwm = NEUTRAL_PWR + pitch_gyro_delta*D_pitch;
+  // motor2_pwm = NEUTRAL_PWR + pitch_gyro_delta*D_pitch;
+  // motor3_pwm = NEUTRAL_PWR - pitch_gyro_delta*D_pitch;
+  // motor0_pwm = NEUTRAL_PWR - pitch_gyro_delta*D_pitch;
 
-  // motor1_pwm = NEUTRAL_PWR + pitch_gyro_delta*D; // D controler
-  // motor2_pwm = NEUTRAL_PWR + pitch_gyro_delta*D;
-
-  // motor3_pwm = NEUTRAL_PWR - pitch_gyro_delta*D;
-  // motor0_pwm = NEUTRAL_PWR - pitch_gyro_delta*D;
-
-  // motor1_pwm = NEUTRAL_PWR + pitch_gyro_delta*D + pitch*P ; // PD controller
-  // motor2_pwm = NEUTRAL_PWR + pitch_gyro_delta*D+ pitch*P ;
-
-  // motor3_pwm = NEUTRAL_PWR - pitch_gyro_delta*D - pitch*P ;
-  // motor0_pwm = NEUTRAL_PWR - pitch_gyro_delta*D - pitch*P ;
+  // // PD CONTROLLER
+  // motor1_pwm = NEUTRAL_PWR + pitch_gyro_delta*D_pitch + pitch*P_pitch ; 
+  // motor2_pwm = NEUTRAL_PWR + pitch_gyro_delta*D_pitch+ pitch*P_pitch ;
+  // motor3_pwm = NEUTRAL_PWR - pitch_gyro_delta*D_pitch - pitch*P_pitch ;
+  // motor0_pwm = NEUTRAL_PWR - pitch_gyro_delta*D_pitch - pitch*P_pitch ;
   
-  pitch_I_term += pitch*I;
+  pitch_I_term += pitch*I_pitch;
 
   if(pitch_I_term > 150){
     pitch_I_term = 150;
@@ -160,13 +163,13 @@ void motor_pwm(){
   if(pitch_I_term < -150){
     pitch_I_term = -150;
   }
-  printf("\npitch I term %f : pitch is %f",pitch_I_term,pitch);
+  // printf("\npitch I_pitch term %f : pitch is %f",pitch_I_term,pitch);
 
-  motor1_pwm = NEUTRAL_PWR + pitch_gyro_delta*D + pitch*P + pitch_I_term;
-  motor2_pwm = NEUTRAL_PWR + pitch_gyro_delta*D + pitch*P + pitch_I_term;
+  motor1_pwm = thrust + pitch_gyro_delta*D_pitch + pitch*P_pitch + pitch_I_term;
+  motor2_pwm = thrust + pitch_gyro_delta*D_pitch + pitch*P_pitch + pitch_I_term;
 
-  motor3_pwm = NEUTRAL_PWR - pitch_gyro_delta*D - pitch*P - pitch_I_term;
-  motor0_pwm = NEUTRAL_PWR - pitch_gyro_delta*D - pitch*P - pitch_I_term;
+  motor3_pwm = thrust - pitch_gyro_delta*D_pitch - pitch*P_pitch - pitch_I_term;
+  motor0_pwm = thrust - pitch_gyro_delta*D_pitch - pitch*P_pitch - pitch_I_term;
 
   // set PWM max value
   if(motor0_pwm > PWM_MAX){
