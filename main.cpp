@@ -98,6 +98,9 @@ int motor1_pwm;
 int motor2_pwm;
 int motor3_pwm;
 
+//get rid of later
+int P_button =0;
+int D_button =0;
 
 struct Keyboard {
   int keypress;
@@ -152,9 +155,13 @@ void motor_pwm(){
   Keyboard keyboard=*shared_memory;
   
   // gains
-  int P_pitch = 17; //15
-  int D_pitch = 1000; //690
-  float I_pitch = 0.02; // 0.042069
+  int P_pitch = 10; //15
+  int D_pitch = 80; //690
+  static float I_pitch = 0.03; // 0.042069
+
+  P_pitch = P_pitch + P_button;
+  D_pitch = D_pitch + D_button;
+
 
   int P_roll = 15;
   int D_roll = 690;
@@ -189,15 +196,15 @@ void motor_pwm(){
   // printf("\npitch I_pitch term %f : pitch_position is %f",pitch_I_term,pitch_position);
 
   //thrust scaling
-  thruster = (keyboard.thrust/128.0)*150+1250;
+  thruster = (keyboard.thrust/128.0)*150+NEUTRAL_PWR; 
   // printf("\nthuster = %d, keyboard thrust = %d",thruster,keyboard.thrust);
 
-  d_pitch = ((keyboard.pitch-128.0)/128)*15;
+  d_pitch = ((keyboard.pitch-128.0)/128)*10;  // might need to fix this
   
 
   // thruster = (keyboard.thrust - 0) * (1800-1000)/(255-0)+1000;
   // thruster = ((keyboard.thrust/255)*1800) + 1000
-  printf("\n desired = %5.2f, current = %5.2f,  ",d_pitch, pitch_position);
+  printf("\n desired = %5.2f, current = %5.2f, I_Val=%5.2f, P=%d , D=%d, I=%5.2f  ",d_pitch, pitch_position, pitch_I_term,P_pitch,D_pitch,I_pitch);
 
 
   motor1_pwm = thruster + pitch_gyro_delta*D_pitch + (d_pitch+pitch_position)*P_pitch + pitch_I_term;
@@ -351,21 +358,30 @@ void safety_check(){
   // printf("\nhearbeat track %d" ,hb_track);
 
   // A button Kill
-  if(keyboard.keypress == 32){ 
+  if(keyboard.keypress == 32){
+    // printf("\n A: P down"); 
+    // P_button --;
     run_program=0;
   }
   // B button Pause
   if(keyboard.keypress == 33){ 
+    // printf("\n B: D up"); 
+    // D_button ++;
     pause = true;
   }
   // X button Unpause
   if(keyboard.keypress == 34){ 
+    // printf("\n X: D down"); 
+    // D_button --;
     pause = false;
   }
   // Y button Calibrate
   if(keyboard.keypress == 35){ 
+    // printf("\n Y: P up"); 
+    // P_button ++;
     calibrate_imu();
   }
+  
   
 
 
@@ -392,6 +408,7 @@ void safety_check(){
     run_program=0;
   }
 
+  // add this back later
   if (keyboard.keypress == 32){
     printf("\nYou pressed spacebar: ending program\n\r");
     run_program=0;
@@ -581,7 +598,7 @@ void update_filter()
   //comp. filter for roll_position, pitch_position here: 
   
 
-  double A=0.001;
+  double A=0.004; //0.001
   roll_gyro_delta = imu_data[1]*imu_diff;
   pitch_gyro_delta = imu_data[0]*imu_diff;
 
