@@ -23,8 +23,8 @@
 #define HB_LIM 100 // heartbeat counter threshold
 
 //add constants
-#define PWM_MAX          1800
-#define NEUTRAL_PWR      1400
+#define PWM_MAX          1800 // 1800
+#define NEUTRAL_PWR      1400 // 1400
 #define frequency  25000000.0
 #define LED0              0x6			
 #define LED0_ON_L         0x6		
@@ -79,15 +79,20 @@ float roll_position = 0; // self add
 float pitch_position = 0;// self add
 float roll_gyro = 0;// self add
 float pitch_gyro = 0;// self add
+float yaw_gyro =0;
 int prev_hb = 0;
 int pwm;
 bool pause = false;
 
-float d_pitch;
+float des_pitch;
+float des_roll;
+float des_yaw;
 
 float roll_gyro_delta;
 float pitch_gyro_delta;
+float yaw_gyro_delta;
 float pitch_I_term;
+float roll_I_term;
 
 int neutral_thrust = 1400;
 int thrust_gain = 150;
@@ -155,17 +160,22 @@ void motor_pwm(){
   Keyboard keyboard=*shared_memory;
   
   // gains
-  int P_pitch = 10; //15
-  int D_pitch = 80; //690
-  static float I_pitch = 0.03; // 0.042069
+  int P_pitch = 10; //10 //15
+  int D_pitch = 80; // 80  //690
+  static float I_pitch = 0.03; // 0.03 // 0.042069
 
-  P_pitch = P_pitch + P_button;
-  D_pitch = D_pitch + D_button;
+  // P_pitch = P_pitch + P_button;
+  // D_pitch = D_pitch + D_button;
 
 
-  int P_roll = 15;
-  int D_roll = 690;
-  float I_roll = 0.042069;
+  int P_roll = 10; // 10
+  int D_roll = 150; // 150
+  float I_roll = 0.042069; // 0.042069
+
+  int P_yaw = 10; // 10
+  int D_yaw = 300; // 150
+  // float I_yaw = 0.0; // 0.042069
+
 
   // // P_pitch CONTROLLER
   // motor1_pwm = NEUTRAL_PWR + pitch_position*P_pitch;
@@ -185,7 +195,7 @@ void motor_pwm(){
   // motor3_pwm = NEUTRAL_PWR - pitch_gyro_delta*D_pitch - pitch_position*P_pitch ;
   // motor0_pwm = NEUTRAL_PWR - pitch_gyro_delta*D_pitch - pitch_position*P_pitch ;
   
-  pitch_I_term += (d_pitch+pitch_position)*I_pitch;
+  pitch_I_term += (des_pitch+pitch_position)*I_pitch;
 
   if(pitch_I_term > 150){
     pitch_I_term = 150;
@@ -193,25 +203,37 @@ void motor_pwm(){
   if(pitch_I_term < -150){
     pitch_I_term = -150;
   }
+
+  roll_I_term += (des_roll+roll_position)*I_roll;
+
+  if(roll_I_term > 150){
+    roll_I_term = 150;
+  }
+  if(roll_I_term < -150){
+    roll_I_term = -150;
+  }
   // printf("\npitch I_pitch term %f : pitch_position is %f",pitch_I_term,pitch_position);
 
   //thrust scaling
   thruster = (keyboard.thrust/128.0)*150+NEUTRAL_PWR; 
   // printf("\nthuster = %d, keyboard thrust = %d",thruster,keyboard.thrust);
 
-  d_pitch = ((keyboard.pitch-128.0)/128)*10;  // might need to fix this
+  des_pitch = ((keyboard.pitch-128.0)/128.0)*10;  // might need to fix this
+  des_roll = ((keyboard.roll-128.0)/128.0)*10;
+  des_yaw = ((keyboard.yaw-128.0)/128.0)*50;
   
 
   // thruster = (keyboard.thrust - 0) * (1800-1000)/(255-0)+1000;
   // thruster = ((keyboard.thrust/255)*1800) + 1000
-  printf("\n desired = %5.2f, current = %5.2f, I_Val=%5.2f, P=%d , D=%d, I=%5.2f  ",d_pitch, pitch_position, pitch_I_term,P_pitch,D_pitch,I_pitch);
+  // printf("\n desired = %5.2f, current = %5.2f, I_Val=%5.2f, P=%d , D=%d, I=%5.2f  ",des_pitch, pitch_position, pitch_I_term,P_pitch,D_pitch,I_pitch );
+  printf("\n desired = %5.2f, current = %5.2f, I_Val=%5.2f, P=%d , D=%d, I=%5.2f  ",des_roll, roll_position, roll_I_term,P_roll,D_roll,I_roll );
 
 
-  motor1_pwm = thruster + pitch_gyro_delta*D_pitch + (d_pitch+pitch_position)*P_pitch + pitch_I_term;
-  motor2_pwm = thruster + pitch_gyro_delta*D_pitch + (d_pitch+pitch_position)*P_pitch + pitch_I_term;
+  motor1_pwm = thruster + pitch_gyro_delta*D_pitch + (des_pitch+pitch_position)*P_pitch + pitch_I_term - roll_gyro_delta*D_roll - (des_roll+roll_position)*P_roll - roll_I_term + yaw_gyro_delta*D_yaw - (des_yaw)*P_yaw; // back right
+  motor2_pwm = thruster + pitch_gyro_delta*D_pitch + (des_pitch+pitch_position)*P_pitch + pitch_I_term + roll_gyro_delta*D_roll + (des_roll+roll_position)*P_roll + roll_I_term - yaw_gyro_delta*D_yaw + (des_yaw)*P_yaw; // bacl left
 
-  motor3_pwm = thruster - pitch_gyro_delta*D_pitch - (d_pitch+pitch_position)*P_pitch - pitch_I_term;
-  motor0_pwm = thruster - pitch_gyro_delta*D_pitch - (d_pitch+pitch_position)*P_pitch - pitch_I_term;
+  motor3_pwm = thruster - pitch_gyro_delta*D_pitch - (des_pitch+pitch_position)*P_pitch - pitch_I_term + roll_gyro_delta*D_roll + (des_roll+roll_position)*P_roll + roll_I_term + yaw_gyro_delta*D_yaw - (des_yaw)*P_yaw; // front left
+  motor0_pwm = thruster - pitch_gyro_delta*D_pitch - (des_pitch+pitch_position)*P_pitch - pitch_I_term - roll_gyro_delta*D_roll - (des_roll+roll_position)*P_roll - roll_I_term - yaw_gyro_delta*D_yaw + (des_yaw)*P_yaw; // front right
 
   // set PWM max value
   if(motor0_pwm > PWM_MAX){
@@ -403,7 +425,7 @@ void safety_check(){
     run_program=0;
   }
 
-  if (imu_data[2]>300){
+  if (imu_data[2]>500){
     printf("\n Gyro Z detected XTREME rotation!: ending program\n\r");
     run_program=0;
   }
@@ -599,8 +621,15 @@ void update_filter()
   
 
   double A=0.004; //0.001
+
+
   roll_gyro_delta = imu_data[1]*imu_diff;
   pitch_gyro_delta = imu_data[0]*imu_diff;
+  yaw_gyro_delta = imu_data[2]*imu_diff;
+
+  yaw_gyro = yaw_gyro + yaw_gyro_delta;
+
+
 
   roll_gyro = roll_gyro + roll_gyro_delta;
   pitch_gyro = pitch_gyro + pitch_gyro_delta;
@@ -611,7 +640,8 @@ void update_filter()
   // fprintf(file_roll,"\nPitch: accel, %5.2f , gyro, %5.2f , filtered, %5.2f  , ROLL: accel, %5.2f , gyro, %5.2f , filtered, %5.2f",pitch_angle, pitch_gyro , pitch_position, roll_angle, roll_gyro , roll_position);
   // fprintf(plot,"\n Pitch: accel, %5.2f , filtered, %5.2f , pwm front, %d, pwm back , %d", pitch_angle, pitch_position, motor0_pwm, motor1_pwm);
   // printf("\nPitch: accel, %5.2f , gyro, %5.2f , filtered, %5.2f  , ROLL: accel, %5.2f , gyro, %5.2f , filtered, %5.2f",pitch_angle, pitch_gyro , pitch_position, roll_angle, roll_gyro , roll_position);
-  fprintf(plot,"\n Pitch:, %5.2f , desired, %5.2f ", pitch_position, d_pitch);
+  // fprintf(plot,"\n Pitch:, %5.2f , p_desired, %5.2f , roll, %5.2f , des_roll, %5.2f , yaw angle, %5.2f , yaw desired direction, %5.2f , yaw gyro delta, %5.2f , motor 0 , %5.2f, motor 1, %5.2f , motor2 , %5.2f, motor 3, %5.2f ", pitch_position, des_pitch, roll_position, des_roll, yaw_gyro, des_yaw, yaw_gyro_delta,motor0_pwm,motor1_pwm,motor2_pwm,motor3_pwm);
+  fprintf(plot,"\n  yaw angle, %5.2f , yaw desired direction, %5.2f , yaw gyro delta, %5.2f , motor 0 , %d, motor 1, %d , motor2 , %d, motor 3, %d ",  yaw_gyro, des_yaw, yaw_gyro_delta,motor0_pwm,motor1_pwm,motor2_pwm,motor3_pwm);
 
 }
 
