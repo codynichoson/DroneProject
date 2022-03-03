@@ -9,6 +9,7 @@
 #include <sys/shm.h>
 #include <sys/stat.h>
 #include <curses.h>
+#include "vive.h"
 
 #define frequency  25000000.0
 #define CONFIG           0x1A
@@ -24,7 +25,7 @@
 
 //add constants
 #define PWM_MAX          1900 // 1800
-#define NEUTRAL_PWR      1435 // 1400
+#define NEUTRAL_PWR      1450 // 1435
 #define frequency  25000000.0
 #define LED0              0x6			
 #define LED0_ON_L         0x6		
@@ -71,7 +72,10 @@ float accel_z_calibration=0;
 float imu_data[6]; //gyro xyz, accel xyz
 long time_curr;
 long time_prev;
-struct timespec te;
+long time_curr_vive;
+long time_prev_vive;
+
+struct timespec te ,ve;
 float yaw=0;
 float pitch_angle=0;
 float roll_angle=0;
@@ -82,11 +86,20 @@ float pitch_gyro = 0;// self add
 float yaw_gyro =0;
 int prev_hb = 0;
 int pwm;
-bool pause = false;
+bool pause = true;
+
+float des_pitch_joy;
+float des_roll_joy;
+float des_yaw_joy;
 
 float des_pitch;
 float des_roll;
 float des_yaw;
+
+float des_pitch_vive;
+float des_roll_vive;
+float des_yaw_vive;
+
 
 float roll_gyro_delta;
 float pitch_gyro_delta;
@@ -106,6 +119,10 @@ int motor3_pwm;
 //get rid of later
 int P_button =0;
 int D_button =0;
+
+
+
+Position local_p, prev_p, desired_p;
 
 struct Keyboard {
   int keypress;
@@ -134,6 +151,7 @@ FILE *plot = fopen("plot.csv", "w");
 int main (int argc, char *argv[])
 {
     //in main function before calibrate imu add
+    init_shared_memory();
     init_pwm();
     init_motor(0);
     init_motor(1);
@@ -151,6 +169,8 @@ int main (int argc, char *argv[])
       read_imu();      
       update_filter();   
       motor_pwm();
+      local_p=*position;  
+      
       // printf("\nwe rolling"); 
     }
     return 0;
@@ -158,25 +178,96 @@ int main (int argc, char *argv[])
 
 void motor_pwm(){
   Keyboard keyboard=*shared_memory;
+
+
+  static int version_counter;
+
+  
+  
+
+  if(prev_p.version == local_p.version){
+    version_counter++;
+    if(version_counter > 100){
+      run_program=0;
+    }
+  }else{
+    version_counter = 0;
+  }
+
+
+
   
   // gains
-  int P_pitch = 8; //10 //15
-  int D_pitch = 80; // 80  //690
+  int P_pitch = 7   ; //10 //15
+  int D_pitch = 50; // 80  //690 // 80
   static float I_pitch = 0.03; // 0.03 // 0.042069
 
   // P_pitch = P_pitch + P_button;
   // D_pitch = D_pitch + D_button;
 
 
-  int P_roll = 7; // 10
-  int D_roll = 90; // 150
+  int P_roll = 6; // 10
+  int D_roll = 65; // 150 // 90
   float I_roll = 0.042069; // 0.042069
 
   int control_yaw = 150; // 10
   float P_yaw = 3; // 150 // 300
   // float I_yaw = 0.0; // 0.042069
 
-  pitch_I_term += (des_pitch+pitch_position)*I_pitch;
+  //vive control
+  int yaw_vive_scale = 50;
+  float P_pitch_vive = 0.03;
+  float D_pitch_vive = 0.1 ;
+  float P_roll_vive = 0.03;//maybe up
+  float D_roll_vive = 0.1;
+
+  float x_err = -(local_p.x - desired_p.x);
+  float y_err = (local_p.y - desired_p.y);
+  
+  // float x_delta_vive = local_p.x - prev_p.x;
+  // float y_delta_vive = local_p.y - prev_p.y;
+
+  if(prev_p.version != local_p.version){
+      // printf("\n\r desired: x=%5.2f, y=%5.2f, z=%5.2f, yaw=%5.2f",desired_p.x, desired_p.y,desired_p.z,desired_p.yaw);
+      timespec_get(&ve,TIME_UTC);
+      time_curr_vive=ve.tv_nsec;
+      //compute time since last execution
+      float vive_diff=time_curr_vive-time_prev_vive;           
+      
+      //check for rollover
+      if(vive_diff<=0)
+      {
+        vive_diff+=1000000000;
+      }
+      //convert to seconds
+      vive_diff=vive_diff/1000000000;
+      time_prev_vive=time_curr_vive;
+
+      float x_delta_vive = -(local_p.x - prev_p.x);//*vive_diff;
+      float y_delta_vive = (local_p.y - prev_p.y);//*vive_diff;
+
+
+
+
+      des_pitch_vive =  y_err*P_pitch_vive + y_delta_vive * D_pitch_vive ; //
+
+      des_roll_vive =  x_err*P_roll_vive + x_delta_vive * D_roll_vive ; // 
+
+
+
+
+      if(local_p.x > 1200 ||local_p.y > 1200 ||local_p.x < -1200 ||local_p.y < -1200 ){
+        printf("\n\rGET BACK TO THE BATTLEFIELD!");
+        // run_program=0;
+      }
+      // printf("current: x=%5.2f, y=%5.2f, z=%5.2f, yaw=%5.2f",current_p.x, current_p.y,current_p.z,current_p.yaw);
+    }
+  
+
+
+
+
+  pitch_I_term += (des_pitch_joy+pitch_position)*I_pitch;
 
   if(pitch_I_term > 150){
     pitch_I_term = 150;
@@ -185,7 +276,7 @@ void motor_pwm(){
     pitch_I_term = -150;
   }
 
-  roll_I_term += (des_roll+roll_position)*I_roll;
+  roll_I_term += (des_roll_joy+roll_position)*I_roll;
 
   if(roll_I_term > 150){
     roll_I_term = 150;
@@ -199,18 +290,31 @@ void motor_pwm(){
   thruster = (keyboard.thrust/128.0)*160+NEUTRAL_PWR; 
   // printf("\nthuster = %d, keyboard thrust = %d",thruster,keyboard.thrust);
 
-  des_pitch = ((keyboard.pitch-128.0)/128.0)*10;  // might need to fix this
-  des_roll = ((keyboard.roll-128.0)/128.0)*10;
-  des_yaw = ((keyboard.yaw-128.0)/128.0)*control_yaw;
+  des_pitch_joy = ((keyboard.pitch-128.0)/128.0)*10;  // might need to fix this
+  des_roll_joy = ((keyboard.roll-128.0)/128.0)*10;
+  des_yaw_joy = ((keyboard.yaw-128.0)/128.0)*control_yaw;
+
+
+
+  des_yaw = (local_p.yaw-desired_p.yaw)*yaw_vive_scale;
+
+  des_pitch = des_pitch_joy*0.5 + des_pitch_vive*0.5;
+  des_roll = des_roll_joy *0.5 + des_roll_vive*0.5;
+  
   
 
   // thruster = (keyboard.thrust - 0) * (1800-1000)/(255-0)+1000;
   // thruster = ((keyboard.thrust/255)*1800) + 1000
-  // printf("\n desired = %5.2f, current = %5.2f, I_Val=%5.2f, P=%d , D=%d, I=%5.2f  ",des_pitch, pitch_position, pitch_I_term,P_pitch,D_pitch,I_pitch );
-  printf("\n desired = %5.2f, current = %5.2f, I_Val=%5.2f, P=%d , D=%d, I=%5.2f  ",des_roll, roll_position, roll_I_term,P_roll,D_roll,I_roll );
-  // printf("\n motor0 = %d, motor1 = %d, motor2 = %d, motor3 = %d, yaw = %5.2f, forward=%d, back=%d, left=%d, right=%d",motor0_pwm,motor1_pwm, motor2_pwm, motor3_pwm, yaw_gyro_delta,motor3_pwm+motor0_pwm,motor1_pwm+motor2_pwm,motor2_pwm+motor3_pwm,motor1_pwm+motor0_pwm);
+  printf("\n ddesired = %5.2f, vive=%5.2f, current = %5.2f, I_Val=%5.2f, P=%d , D=%d, I=%5.2f  ",des_pitch,des_pitch_vive, pitch_position, pitch_I_term,P_pitch,D_pitch,I_pitch );
+  // printf("\n desired = %5.2f, current = %5.2f, I_Val=%5.2f, P=%d , D=%d, I=%5.2f  ",des_roll_joy, roll_position, roll_I_term,P_roll,D_roll,I_roll );
+  printf("\n motor0 = %d, motor1 = %d, motor2 = %d, motor3 = %d, yaw = %5.2f, forward=%d, back=%d, left=%d, right=%d",motor0_pwm,motor1_pwm, motor2_pwm, motor3_pwm, yaw_gyro_delta,motor3_pwm+motor0_pwm,motor1_pwm+motor2_pwm,motor2_pwm+motor3_pwm,motor1_pwm+motor0_pwm);
 
 
+
+  // motor1_pwm = thruster + pitch_gyro_delta*D_pitch + (des_pitch_joy+pitch_position)*P_pitch + pitch_I_term - roll_gyro_delta*D_roll - (des_roll_joy+roll_position)*P_roll - roll_I_term - (des_yaw_joy-yaw_gyro_delta)*P_yaw; // back right 1
+  // motor2_pwm = thruster + pitch_gyro_delta*D_pitch + (des_pitch_joy+pitch_position)*P_pitch + pitch_I_term + roll_gyro_delta*D_roll + (des_roll_joy+roll_position)*P_roll + roll_I_term + (des_yaw_joy-yaw_gyro_delta)*P_yaw; // back left 2 
+  // motor3_pwm = thruster - pitch_gyro_delta*D_pitch - (des_pitch_joy+pitch_position)*P_pitch - pitch_I_term + roll_gyro_delta*D_roll + (des_roll_joy+roll_position)*P_roll + roll_I_term - (des_yaw_joy-yaw_gyro_delta)*P_yaw ; // front left 3 
+  // motor0_pwm = thruster - pitch_gyro_delta*D_pitch - (des_pitch_joy+pitch_position)*P_pitch - pitch_I_term - roll_gyro_delta*D_roll - (des_roll_joy+roll_position)*P_roll - roll_I_term + (des_yaw_joy-yaw_gyro_delta)*P_yaw ; // front right 0
 
   motor1_pwm = thruster + pitch_gyro_delta*D_pitch + (des_pitch+pitch_position)*P_pitch + pitch_I_term - roll_gyro_delta*D_roll - (des_roll+roll_position)*P_roll - roll_I_term - (des_yaw-yaw_gyro_delta)*P_yaw; // back right 1
   motor2_pwm = thruster + pitch_gyro_delta*D_pitch + (des_pitch+pitch_position)*P_pitch + pitch_I_term + roll_gyro_delta*D_roll + (des_roll+roll_position)*P_roll + roll_I_term + (des_yaw-yaw_gyro_delta)*P_yaw; // back left 2 
@@ -258,6 +362,8 @@ void motor_pwm(){
     set_PWM(0,1000);
   }
 
+  prev_p = local_p;
+
 }
 
 void init_pwm()
@@ -289,8 +395,6 @@ void init_pwm()
       wiringPiI2CWriteReg8(pwm, 0x00, restart|0x20);
     }
 }
-
-
 
 void init_motor(uint8_t channel)
 {
@@ -324,7 +428,6 @@ void init_motor(uint8_t channel)
 	delay(100);
 
 }
-
 
 void set_PWM( uint8_t channel, float time_on_us)
 {
@@ -371,12 +474,15 @@ void safety_check(){
   if(keyboard.keypress == 33){ 
     // printf("\n B: D up"); 
     // D_button ++;
+
     pause = true;
   }
   // X button Unpause
   if(keyboard.keypress == 34){ 
     // printf("\n X: D down"); 
     // D_button --;
+    pitch_I_term = 0;
+    roll_I_term = 0;
     pause = false;
   }
   // Y button Calibrate
@@ -397,12 +503,12 @@ void safety_check(){
     printf("\nPitch is TOO XTREME!: ending program\n\r");
     run_program=0;
   }
-  if (imu_data[0]>300 ){
+  if (imu_data[0]>500 ){//back300
     printf("\n Gyro X detected XTREME rotation!: ending program\n\r");
     run_program=0;
   }
 
-  if ( imu_data[1]>300 ){
+  if ( imu_data[1]>500 ){//back300
     printf("\n Gyro Y detected XTREME rotation!: ending program\n\r");
     run_program=0;
   }
@@ -472,12 +578,14 @@ void trap(int signal)
     run_program=0;
 }
 
-
 void calibrate_imu()
 {
   x_gyro_calibration= 0;
   y_gyro_calibration= 0;
   z_gyro_calibration= 0;
+  // set current position to vive current offsets
+  desired_p.x = local_p.x;
+  desired_p.y = local_p.y;
   float roll_tot = 0, pitch_tot = 0;
   float z_accel = 0;
   float x_gyro = 0, y_gyro = 0, z_gyro = 0;
@@ -608,7 +716,7 @@ void update_filter()
   double A=0.004; //0.001
 
 
-  roll_gyro_delta = imu_data[1]*imu_diff;
+  roll_gyro_delta = imu_data[1]*imu_diff;//deg delta
   pitch_gyro_delta = imu_data[0]*imu_diff;
   yaw_gyro_delta = imu_data[2];
 
@@ -626,8 +734,8 @@ void update_filter()
   // fprintf(file_roll,"\nPitch: accel, %5.2f , gyro, %5.2f , filtered, %5.2f  , ROLL: accel, %5.2f , gyro, %5.2f , filtered, %5.2f",pitch_angle, pitch_gyro , pitch_position, roll_angle, roll_gyro , roll_position);
   // fprintf(plot,"\n Pitch: accel, %5.2f , filtered, %5.2f , pwm front, %d, pwm back , %d", pitch_angle, pitch_position, motor0_pwm, motor1_pwm);
   // printf("\nPitch: accel, %5.2f , gyro, %5.2f , filtered, %5.2f  , ROLL: accel, %5.2f , gyro, %5.2f , filtered, %5.2f",pitch_angle, pitch_gyro , pitch_position, roll_angle, roll_gyro , roll_position);
-  // fprintf(plot,"\n Pitch:, %5.2f , p_desired, %5.2f , roll, %5.2f , des_roll, %5.2f , yaw angle, %5.2f , yaw desired direction, %5.2f , yaw gyro delta, %5.2f , motor 0 , %5.2f, motor 1, %5.2f , motor2 , %5.2f, motor 3, %5.2f ", pitch_position, des_pitch, roll_position, des_roll, yaw_gyro, des_yaw, yaw_gyro_delta,motor0_pwm,motor1_pwm,motor2_pwm,motor3_pwm);
-  fprintf(plot,"\n  yaw angle, %5.2f , yaw desired direction, %5.2f , yaw gyro delta, %5.2f , motor 0 , %d, motor 1, %d , motor2 , %d, motor 3, %d ",  yaw_gyro, des_yaw, yaw_gyro_delta,motor0_pwm,motor1_pwm,motor2_pwm,motor3_pwm);
+  // fprintf(plot,"\n Pitch:, %5.2f , p_desired, %5.2f , roll, %5.2f , des_roll_joy, %5.2f , yaw angle, %5.2f , yaw desired direction, %5.2f , yaw gyro delta, %5.2f , motor 0 , %5.2f, motor 1, %5.2f , motor2 , %5.2f, motor 3, %5.2f ", pitch_position, des_pitch_joy, roll_position, des_roll_joy, yaw_gyro, des_yaw_joy, yaw_gyro_delta,motor0_pwm,motor1_pwm,motor2_pwm,motor3_pwm);
+  fprintf(plot,"\n  yaw angle, %5.2f , yaw desired direction, %5.2f , yaw gyro delta, %5.2f , motor 0 , %d, motor 1, %d , motor2 , %d, motor 3, %d ",  yaw_gyro, des_yaw_joy, yaw_gyro_delta,motor0_pwm,motor1_pwm,motor2_pwm,motor3_pwm);
 
 }
 
