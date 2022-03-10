@@ -185,6 +185,10 @@ void motor_pwm(){
 
 
   static int version_counter;
+  static int z_accel_counts = 0;
+  static float z_accel_sum = 0;
+
+  static float z_delta_vive = 0;
 
   
   
@@ -228,14 +232,28 @@ void motor_pwm(){
 
   float x_err = -(local_p.x - desired_p.x);
   float y_err = (local_p.y - desired_p.y);
+  float z_err = local_p.z - desired_p.z;
 
+  //BuZiness
+
+  float P_z_vive = 0.07;//maybe up
+  float D_z_vive = 2;
+
+  static float Z_vel = 0;
+  float Kz = 50;
+  float Az = 0.9;
+
+  static float z_vel_est =0;
+  z_vel_est += imu_data[5];
+
+  
+  static float z_accel_avg = 0;
 
   float P_Z = 0.07;
   float D_Z = 2;
   float I_Z = 0.003;
   
-  // float x_delta_vive = local_p.x - prev_p.x;
-  // float y_delta_vive = local_p.y - prev_p.y;
+  
 
   if(prev_p.version != local_p.version){
       // printf("\n\r desired: x=%5.2f, y=%5.2f, z=%5.2f, yaw=%5.2f",desired_p.x, desired_p.y,desired_p.z,desired_p.yaw);
@@ -255,13 +273,15 @@ void motor_pwm(){
 
       float x_delta_vive = -(local_p.x - prev_p.x);//*vive_diff;
       float y_delta_vive = (local_p.y - prev_p.y);//*vive_diff;
+      z_delta_vive = (local_p.z - prev_p.z);
 
-
-
+  
 
       des_pitch_vive =  y_err*P_pitch_vive + y_delta_vive * D_pitch_vive ; //
 
       des_roll_vive =  x_err*P_roll_vive + x_delta_vive * D_roll_vive ; // 
+
+      des_Z_vive = z_err*P_z_vive + z_delta_vive * D_z_vive ;
 
 
 
@@ -270,8 +290,17 @@ void motor_pwm(){
         printf("\n\rGET BACK TO THE BATTLEFIELD!");
         // run_program=0;
       }
+      z_accel_counts = 0;
+      z_accel_sum = 0;
       // printf("current: x=%5.2f, y=%5.2f, z=%5.2f, yaw=%5.2f",current_p.x, current_p.y,current_p.z,current_p.yaw);
     }
+
+    z_accel_sum += imu_data[5]+accel_z_calibration;
+    z_accel_counts+=1;
+
+    z_accel_avg = z_accel_sum/z_accel_counts;
+
+
   
 
 
@@ -279,11 +308,13 @@ void motor_pwm(){
   des_pitch_joy = ((keyboard.pitch-128.0)/128.0)*10;  // might need to fix this
   des_roll_joy = ((keyboard.roll-128.0)/128.0)*10;
   des_yaw_joy = ((keyboard.yaw-128.0)/128.0)*control_yaw;
+  des_Z_joy = (keyboard.thrust/128.0)*160+NEUTRAL_PWR;
 
   des_yaw = (local_p.yaw-desired_p.yaw)*yaw_vive_scale;
 
   des_pitch = des_pitch_joy*0.5 + des_pitch_vive*0.5;
   des_roll = des_roll_joy *0.5 + des_roll_vive*0.5;
+  des_Z = des_Z_joy *0.5 + des_Z_vive*0.5;
 
 
   pitch_I_term += (des_pitch+pitch_position)*I_pitch;
@@ -317,10 +348,16 @@ void motor_pwm(){
   // printf("\npitch I_pitch term %f : pitch_position is %f",pitch_I_term,pitch_position);
 
   //thrust scaling
-  thruster = (keyboard.thrust/128.0)*160+NEUTRAL_PWR; 
+  
   // printf("\nthuster = %d, keyboard thrust = %d",thruster,keyboard.thrust);
 
   
+  Z_vel = (z_vel_est + z_accel_avg * Kz)*Az + (z_delta_vive)*(1-Az);
+
+
+  // thruster = (keyboard.thrust/128.0)*160+NEUTRAL_PWR; //without z influence!!!!!!1
+  // thruster = (local_p.z - des_Z)*P_Z - Z_vel*D_Z + Z_I_term + NEUTRAL_PWR;
+  thruster = (local_p.z - desired_p.z)*P_Z ;//- Z_vel*D_Z  + NEUTRAL_PWR;
 
 
   
@@ -329,10 +366,10 @@ void motor_pwm(){
 
   // thruster = (keyboard.thrust - 0) * (1800-1000)/(255-0)+1000;
   // thruster = ((keyboard.thrust/255)*1800) + 1000
-  printf("\n ptich = %5.2f, ddesired= %5.2f, vive=%5.2f, I_Val=%5.2f :: Roll=%5.2f, desired=%5.2f, vive = %5.2f, I_val=%5.2f ",pitch_position,des_pitch,des_pitch_vive, pitch_I_term, roll_position,des_roll,des_roll_vive, roll_I_term );
+  // printf("\n ptich = %5.2f, ddesired= %5.2f, vive=%5.2f, I_Val=%5.2f :: Roll=%5.2f, desired=%5.2f, vive = %5.2f, I_val=%5.2f ",pitch_position,des_pitch,des_pitch_vive, pitch_I_term, roll_position,des_roll,des_roll_vive, roll_I_term );
   // printf("\n desired = %5.2f, current = %5.2f, I_Val=%5.2f, P=%d , D=%d, I=%5.2f  ",des_roll_joy, roll_position, roll_I_term,P_roll,D_roll,I_roll );
   // printf("\n motor0 = %d, motor1 = %d, motor2 = %d, motor3 = %d, yaw = %5.2f, forward=%d, back=%d, left=%d, right=%d",motor0_pwm,motor1_pwm, motor2_pwm, motor3_pwm, yaw_gyro_delta,motor3_pwm+motor0_pwm,motor1_pwm+motor2_pwm,motor2_pwm+motor3_pwm,motor1_pwm+motor0_pwm);
-
+  printf("\n thrust = %5.2f, Z_vel = %5.2f, z_accel_imu = %5.4f",thruster, Z_vel, imu_data[5]+accel_z_calibration);
 
 
   // motor1_pwm = thruster + pitch_gyro_delta*D_pitch + (des_pitch_joy+pitch_position)*P_pitch + pitch_I_term - roll_gyro_delta*D_roll - (des_roll_joy+roll_position)*P_roll - roll_I_term - (des_yaw_joy-yaw_gyro_delta)*P_yaw; // back right 1
@@ -610,6 +647,7 @@ void calibrate_imu()
   // set current position to vive current offsets
   desired_p.x = local_p.x;
   desired_p.y = local_p.y;
+  desired_p.z = 5000.0;
   float roll_tot = 0, pitch_tot = 0;
   float z_accel = 0;
   float x_gyro = 0, y_gyro = 0, z_gyro = 0;
@@ -675,7 +713,9 @@ void read_imu()
     vw=vw ^ 0xffff;
     vw=-vw-1;
   }          
-  imu_data[5]= accel_z_calibration + ((float)vw/32767.0)*2.0;//todo: convert vw from raw values to g's
+  // imu_data[5]= accel_z_calibration + ((float)vw/32767.0)*2.0;//todo: convert vw from raw values to g's
+  imu_data[5]= ((float)vw/32767.0)*2.0;//todo: convert vw from raw values to g's
+  
   
   
   address=67;//todo: set addres value for gyro x value;
@@ -711,9 +751,12 @@ void read_imu()
   }          
   imu_data[2]=z_gyro_calibration+((float)vw/32767.0)*500;////todo: convert vw from raw values to degrees/second
   
-  pitch_angle = pitch_calibration + atan2(-imu_data[4],-imu_data[5]+accel_z_calibration)*(180/3.14159); //pitch_position
-  roll_angle = roll_calibration + atan2(imu_data[3],-imu_data[5]+accel_z_calibration)*(180/3.14159); //roll_position
-  
+  // pitch_angle = pitch_calibration + atan2(-imu_data[4],-imu_data[5]-accel_z_calibration)*(180/3.14159); //pitch_position
+  // roll_angle = roll_calibration + atan2(imu_data[3],-imu_data[5]-accel_z_calibration)*(180/3.14159); //roll_position
+
+  pitch_angle = pitch_calibration + atan2(-imu_data[4],-imu_data[5])*(180/3.14159); //pitch_position
+  roll_angle = roll_calibration + atan2(imu_data[3],-imu_data[5])*(180/3.14159); //roll_position
+
 
   // printf("Gyro  X:%5.2f   Y:%5.2f   Z:%5.2f     Accel  X:%5.2f   Y:%5.2f   Z:%5.2f     Roll:%5.2f     Pitch:%5.2f  \n", imu_data[0], imu_data[1], imu_data[2], imu_data[3], imu_data[4], imu_data[5], roll_angle, pitch_angle);
 }
