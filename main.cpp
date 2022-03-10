@@ -81,6 +81,7 @@ float pitch_angle=0;
 float roll_angle=0;
 float roll_position = 0; // self add
 float pitch_position = 0;// self add
+float Z_position = 0;
 float roll_gyro = 0;// self add
 float pitch_gyro = 0;// self add
 float yaw_gyro =0;
@@ -91,21 +92,24 @@ bool pause = true;
 float des_pitch_joy;
 float des_roll_joy;
 float des_yaw_joy;
+float des_Z_joy;
 
 float des_pitch;
 float des_roll;
 float des_yaw;
+float des_Z;
 
 float des_pitch_vive;
 float des_roll_vive;
 float des_yaw_vive;
-
+float des_Z_vive;
 
 float roll_gyro_delta;
 float pitch_gyro_delta;
 float yaw_gyro_delta;
 float pitch_I_term;
 float roll_I_term;
+float Z_I_term;
 
 int neutral_thrust = 1400;
 int thrust_gain = 150;
@@ -208,7 +212,7 @@ void motor_pwm(){
 
   int P_roll = 6; // 10
   int D_roll = 40; // 150 // 90 without vive // 65
-  float I_roll = 0.022069; // 0.042069
+  float I_roll = 0.015; // 0.042069
 
   int control_yaw = 150; // 10
   float P_yaw = 3; // 150 // 300
@@ -217,13 +221,18 @@ void motor_pwm(){
   //vive control
   int yaw_vive_scale = 50;
   float P_pitch_vive = 0.03;
-  float D_pitch_vive = 0.15 ;
+  float D_pitch_vive = 0.15;//15 ;
 
-  float P_roll_vive = 0.03;//maybe up
-  float D_roll_vive = 0.1;
+  float P_roll_vive = 0.02;//maybe up
+  float D_roll_vive = 0.16;
 
   float x_err = -(local_p.x - desired_p.x);
   float y_err = (local_p.y - desired_p.y);
+
+
+  float P_Z = 0.07;
+  float D_Z = 2;
+  float I_Z = 0.003;
   
   // float x_delta_vive = local_p.x - prev_p.x;
   // float y_delta_vive = local_p.y - prev_p.y;
@@ -267,8 +276,18 @@ void motor_pwm(){
 
 
 
+  des_pitch_joy = ((keyboard.pitch-128.0)/128.0)*10;  // might need to fix this
+  des_roll_joy = ((keyboard.roll-128.0)/128.0)*10;
+  des_yaw_joy = ((keyboard.yaw-128.0)/128.0)*control_yaw;
 
-  pitch_I_term += (des_pitch_joy+pitch_position)*I_pitch;
+  des_yaw = (local_p.yaw-desired_p.yaw)*yaw_vive_scale;
+
+  des_pitch = des_pitch_joy*0.5 + des_pitch_vive*0.5;
+  des_roll = des_roll_joy *0.5 + des_roll_vive*0.5;
+
+
+  pitch_I_term += (des_pitch+pitch_position)*I_pitch;
+  // pitch_I_term += (pitch_position-des_pitch)*I_pitch;
 
   if(pitch_I_term > 150){
     pitch_I_term = 150;
@@ -277,7 +296,8 @@ void motor_pwm(){
     pitch_I_term = -150;
   }
 
-  roll_I_term += (des_roll_joy+roll_position)*I_roll;
+  roll_I_term += (des_roll+roll_position)*I_roll;
+  // roll_I_term += (roll_position - des_roll)*I_roll;
 
   if(roll_I_term > 150){
     roll_I_term = 150;
@@ -285,22 +305,25 @@ void motor_pwm(){
   if(roll_I_term < -150){
     roll_I_term = -150;
   }
+
+  Z_I_term += (des_Z+Z_position)*I_Z;
+
+  if(Z_I_term > 300){
+    Z_I_term = 300;
+  }
+  if(Z_I_term < -300){
+    Z_I_term = -300;
+  }
   // printf("\npitch I_pitch term %f : pitch_position is %f",pitch_I_term,pitch_position);
 
   //thrust scaling
   thruster = (keyboard.thrust/128.0)*160+NEUTRAL_PWR; 
   // printf("\nthuster = %d, keyboard thrust = %d",thruster,keyboard.thrust);
 
-  des_pitch_joy = ((keyboard.pitch-128.0)/128.0)*10;  // might need to fix this
-  des_roll_joy = ((keyboard.roll-128.0)/128.0)*10;
-  des_yaw_joy = ((keyboard.yaw-128.0)/128.0)*control_yaw;
+  
 
 
-
-  des_yaw = (local_p.yaw-desired_p.yaw)*yaw_vive_scale;
-
-  des_pitch = des_pitch_joy*0.5 + des_pitch_vive*0.5;
-  des_roll = des_roll_joy *0.5 + des_roll_vive*0.5;
+  
   
   
 
@@ -690,6 +713,7 @@ void read_imu()
   
   pitch_angle = pitch_calibration + atan2(-imu_data[4],-imu_data[5]+accel_z_calibration)*(180/3.14159); //pitch_position
   roll_angle = roll_calibration + atan2(imu_data[3],-imu_data[5]+accel_z_calibration)*(180/3.14159); //roll_position
+  
 
   // printf("Gyro  X:%5.2f   Y:%5.2f   Z:%5.2f     Accel  X:%5.2f   Y:%5.2f   Z:%5.2f     Roll:%5.2f     Pitch:%5.2f  \n", imu_data[0], imu_data[1], imu_data[2], imu_data[3], imu_data[4], imu_data[5], roll_angle, pitch_angle);
 }
