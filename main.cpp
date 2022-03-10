@@ -199,16 +199,16 @@ void motor_pwm(){
   
   // gains
   int P_pitch = 7   ; //10 //15
-  int D_pitch = 50; // 80  //690 // 80
-  static float I_pitch = 0.03; // 0.03 // 0.042069
+  int D_pitch = 50; // 80  //690 // 80 without vive // 50
+  static float I_pitch = 0.015; // 0.03 // 0.042069
 
   // P_pitch = P_pitch + P_button;
   // D_pitch = D_pitch + D_button;
 
 
   int P_roll = 6; // 10
-  int D_roll = 65; // 150 // 90
-  float I_roll = 0.042069; // 0.042069
+  int D_roll = 40; // 150 // 90 without vive // 65
+  float I_roll = 0.022069; // 0.042069
 
   int control_yaw = 150; // 10
   float P_yaw = 3; // 150 // 300
@@ -217,7 +217,8 @@ void motor_pwm(){
   //vive control
   int yaw_vive_scale = 50;
   float P_pitch_vive = 0.03;
-  float D_pitch_vive = 0.1 ;
+  float D_pitch_vive = 0.15 ;
+
   float P_roll_vive = 0.03;//maybe up
   float D_roll_vive = 0.1;
 
@@ -305,9 +306,9 @@ void motor_pwm(){
 
   // thruster = (keyboard.thrust - 0) * (1800-1000)/(255-0)+1000;
   // thruster = ((keyboard.thrust/255)*1800) + 1000
-  printf("\n ddesired = %5.2f, vive=%5.2f, current = %5.2f, I_Val=%5.2f, P=%d , D=%d, I=%5.2f  ",des_pitch,des_pitch_vive, pitch_position, pitch_I_term,P_pitch,D_pitch,I_pitch );
+  printf("\n ptich = %5.2f, ddesired= %5.2f, vive=%5.2f, I_Val=%5.2f :: Roll=%5.2f, desired=%5.2f, vive = %5.2f, I_val=%5.2f ",pitch_position,des_pitch,des_pitch_vive, pitch_I_term, roll_position,des_roll,des_roll_vive, roll_I_term );
   // printf("\n desired = %5.2f, current = %5.2f, I_Val=%5.2f, P=%d , D=%d, I=%5.2f  ",des_roll_joy, roll_position, roll_I_term,P_roll,D_roll,I_roll );
-  printf("\n motor0 = %d, motor1 = %d, motor2 = %d, motor3 = %d, yaw = %5.2f, forward=%d, back=%d, left=%d, right=%d",motor0_pwm,motor1_pwm, motor2_pwm, motor3_pwm, yaw_gyro_delta,motor3_pwm+motor0_pwm,motor1_pwm+motor2_pwm,motor2_pwm+motor3_pwm,motor1_pwm+motor0_pwm);
+  // printf("\n motor0 = %d, motor1 = %d, motor2 = %d, motor3 = %d, yaw = %5.2f, forward=%d, back=%d, left=%d, right=%d",motor0_pwm,motor1_pwm, motor2_pwm, motor3_pwm, yaw_gyro_delta,motor3_pwm+motor0_pwm,motor1_pwm+motor2_pwm,motor2_pwm+motor3_pwm,motor1_pwm+motor0_pwm);
 
 
 
